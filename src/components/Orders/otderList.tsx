@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { fetchOrders, deleteOrder, updateOrder } from '../../services/api';
-import { Table, Button, Modal, Spin, message, Input, Row, Col } from 'antd';
+import { fetchOrders, deleteOrder, updateOrder, fetchProducts } from '../../services/api';
+import { Table, Button, Modal, Spin, message, Input, Row, Col, Checkbox } from 'antd';
 import { EditOutlined, DeleteOutlined } from '@ant-design/icons';
 
 interface Product {
@@ -14,13 +14,29 @@ interface Order {
   id: number; 
   description: string;
   orderedProducts: { id: number; product: Product }[];
-  date: Date; }
+  date: Date; 
+}
 
 const OrdersList: React.FC = () => {
   const queryClient = useQueryClient();
   const [editingOrder, setEditingOrder] = useState<Order | null>(null);
   const [newDescription, setNewDescription] = useState('');
+  const [selectedProductIds, setSelectedProductIds] = useState<number[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
+
+  const { data: products, isLoading: loadingProducts } = useQuery({
+    queryKey: ['products'],
+    queryFn: async () => {
+      try {
+        const res = await fetchProducts();
+        return res as Product[];
+      } catch (error) {
+        console.error('Error fetching products:', error);
+        throw error;
+      }
+    },
+    staleTime: 30000,
+  });
 
   const { data, isLoading } = useQuery({
     queryKey: ['orders'],
@@ -49,11 +65,12 @@ const OrdersList: React.FC = () => {
   });
 
   const updateMutation = useMutation({
-    mutationFn: (order: Order) => updateOrder(order),
+    mutationFn: (order: { orderData: { id:number,description: string }; productIds: number[] }) => updateOrder(order),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['orders'] });
       setEditingOrder(null); 
       setNewDescription(''); 
+      setSelectedProductIds([]); // Reset selected product IDs
       message.success('Order updated successfully');
     },
     onError: (error: any) => {
@@ -72,6 +89,7 @@ const OrdersList: React.FC = () => {
   const handleEdit = (order: Order) => {
     setEditingOrder(order);
     setNewDescription(order.description);
+    setSelectedProductIds(order.orderedProducts.map(p => p.product.id)); // Set selected product IDs for editing
   };
 
   const handleUpdate = (e: React.FormEvent) => {
@@ -82,11 +100,24 @@ const OrdersList: React.FC = () => {
     }
 
     if (editingOrder) {
-      updateMutation.mutate({ ...editingOrder, description: newDescription });
+      const orderPayload = {
+        orderData: {
+           id:editingOrder.id,
+          description: newDescription,
+        },
+        productIds: selectedProductIds,
+      };
+      updateMutation.mutate(orderPayload); // Pass the order ID and the payload
     }
   };
 
-  if (isLoading) return <Spin tip="Loading orders..." />;
+  const handleCheckboxChange = (id: number) => {
+    setSelectedProductIds(prev =>
+      prev.includes(id) ? prev.filter(productId => productId !== id) : [...prev, id]
+    );
+  };
+
+  if (isLoading || loadingProducts) return <Spin tip="Loading..." />;
 
   const filteredData = data?.filter(order =>
     order.description.toLowerCase().includes(searchQuery.toLowerCase())
@@ -103,7 +134,6 @@ const OrdersList: React.FC = () => {
       dataIndex: 'description',
       key: 'description',
     },
-    
     {
       title: 'Ordered Products',
       dataIndex: 'orderedProducts',
@@ -155,7 +185,7 @@ const OrdersList: React.FC = () => {
           />
         </Col>
       </Row>
-      <Table dataSource={filteredData} columns={columns} rowKey="id" pagination={false} /> {/* Disable pagination */}
+      <Table dataSource={filteredData} columns={columns} rowKey="id" pagination={false} />
 
       <Modal
         title="Edit Order"
@@ -170,16 +200,28 @@ const OrdersList: React.FC = () => {
             placeholder="New order description"
             className="mb-2"
           />
-          <Button type="primary" htmlType="submit" loading={updateMutation.isPending}>
-            Update
-          </Button>
-          <Button
-            type="default"
-            onClick={() => setEditingOrder(null)}
-            className="ml-2"
-          >
-            Cancel
-          </Button>
+          <h4>Available Products</h4>
+          {products?.map(product => (
+            <Checkbox
+              key={product.id}
+              checked={selectedProductIds.includes(product.id)}
+              onChange={() => handleCheckboxChange(product.id)}
+            >
+              {product.productName}
+            </Checkbox>
+          ))}
+          <Row style={{ marginTop: '8px' }}>
+            <Col>
+              <Button type="primary" htmlType="submit" loading={updateMutation.isPending}>
+                Update
+              </Button>
+            </Col>
+            <Col style={{ marginLeft: '8px' }}>
+              <Button type="default" onClick={() => setEditingOrder(null)}>
+                Cancel
+              </Button>
+            </Col>
+          </Row>
         </form>
         {updateMutation.isError && (
           <div className="mt-2 text-red-600">

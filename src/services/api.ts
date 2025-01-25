@@ -1,7 +1,8 @@
 import axios from 'axios';
 
 const api = axios.create({
-  baseURL: 'https://api-ecommerce-xi-tawny.vercel.app/', // Replace with your backend URL
+  
+  baseURL: 'https://api-ecommerce-xi-tawny.vercel.app/', 
 });
 
 export const fetchOrders = async () => {
@@ -13,10 +14,9 @@ export const fetchProducts= async () => {
   return response.data;
 };
 
-export const updateOrder = async (order: { id: number; description: string }) => {
-  const response = await api.put(`/orders/${order.id}`, {
-    description: order.description,
-  });
+export const updateOrder = async ( order: {orderData: {id:number, description: string}; productIds: number[] }) => {
+  console.log(order)
+  const response = await api.put(`/orders/${order.orderData.id}`, order);
   return response.data;
 };
 export const createOrder = async (order: {orderData: {description: string}; productIds: number[] }) => {
